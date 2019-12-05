@@ -1,3 +1,4 @@
+import { AsyncQueue } from '@robinlemon/priority-concurrency-queue';
 import * as http from 'http';
 import { HTTPParser } from 'http-parser-js';
 import * as net from 'net';
@@ -57,14 +58,64 @@ export class PersistentTunnelSocket {
 
     private RequestKiller?: (Reason?: Error) => void;
 
-    public constructor(TunnelHost: string, ServerHost: string) {
+    private RequestQueue: AsyncQueue;
+
+    public constructor(TunnelHost: string, ServerHost: string, Pipelining = 1) {
         this.TunnelHost = url.parse(TunnelHost, false, true);
         this.ServerHost = url.parse(ServerHost, false, true);
+
+        this.RequestQueue = new AsyncQueue({
+            AutoStart: true,
+            Concurrency: Pipelining,
+        });
 
         this.Connect();
     }
 
-    public Request = <T = string>(Url: string, Options?: IRequestOptions): Promise<IResponse<T>> => {
+    public Destroy = (Err?: Error): void => {
+        /* Disconnect Socket */
+        this.Destroyed = true;
+        this.Disconnect(Err);
+
+        /* Destroy HTTP Parser */
+        this.Parser.close();
+
+        /* Destroy Pipes */
+        this.InPipe.removeAllListeners();
+        this.InPipe.destroy();
+        this.InPipe = (undefined as unknown) as stream.PassThrough;
+
+        this.OutPipe.removeAllListeners();
+        this.OutPipe.destroy();
+        this.OutPipe = (undefined as unknown) as stream.PassThrough;
+
+        this.UnzipPipe.removeAllListeners();
+        this.UnzipPipe.destroy();
+        this.UnzipPipe = (undefined as unknown) as zlib.Unzip;
+
+        this.BrotliPipe.removeAllListeners();
+        this.BrotliPipe.destroy();
+        this.BrotliPipe = (undefined as unknown) as zlib.BrotliDecompress;
+
+        /* Stop Queue Processing */
+        if (this.RequestQueue.isRunning) {
+            this.RequestQueue.Clear();
+            this.RequestQueue.Stop();
+        }
+    };
+
+    public Request = <T = string>(Url: string, Options?: IRequestOptions): Promise<IResponse<T>> =>
+        new Promise<IResponse<T>>((Resolve, Reject) => {
+            this.RequestQueue.Add({
+                Priority: 1,
+                Task: (): Promise<void> =>
+                    this.RequestTask<T>(Url, Options)
+                        .then(Resolve)
+                        .catch(Reject),
+            });
+        });
+
+    private RequestTask = <T = string>(Url: string, Options?: IRequestOptions): Promise<IResponse<T>> => {
         let TimeoutRejector: () => void;
         let TimeoutID: NodeJS.Timeout;
 
@@ -185,32 +236,6 @@ export class PersistentTunnelSocket {
                 this.Socket.uncork();
             }),
         ]);
-    };
-
-    public Destroy = (Err?: Error): void => {
-        /* Disconnect Socket */
-        this.Destroyed = true;
-        this.Disconnect(Err);
-
-        /* Destroy HTTP Parser */
-        this.Parser.close();
-
-        /* Destroy Pipes */
-        this.InPipe.removeAllListeners();
-        this.InPipe.destroy();
-        this.InPipe = (undefined as unknown) as stream.PassThrough;
-
-        this.OutPipe.removeAllListeners();
-        this.OutPipe.destroy();
-        this.OutPipe = (undefined as unknown) as stream.PassThrough;
-
-        this.UnzipPipe.removeAllListeners();
-        this.UnzipPipe.destroy();
-        this.UnzipPipe = (undefined as unknown) as zlib.Unzip;
-
-        this.BrotliPipe.removeAllListeners();
-        this.BrotliPipe.destroy();
-        this.BrotliPipe = (undefined as unknown) as zlib.BrotliDecompress;
     };
 
     private Connect = (): void => {

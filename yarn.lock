@@ -312,6 +312,11 @@
     "@types/istanbul-reports" "^1.1.1"
     "@types/yargs" "^13.0.0"
 
+"@robinlemon/priority-concurrency-queue@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/@robinlemon/priority-concurrency-queue/-/priority-concurrency-queue-2.0.0.tgz#57a05264dfc10da04e215788da40bd8466b986b6"
+  integrity sha512-JfPLFDGiUcp8vogHI8YUhO8N2zbtdcuhtXUOs258p6RfkAgfmsRgX/n8ejnniglpkwBtAbIbjD9zVMJeRPJybw==
+
 "@types/babel__core@^7.1.0":
   version "7.1.3"
   resolved "https://registry.yarnpkg.com/@types/babel__core/-/babel__core-7.1.3.tgz#e441ea7df63cd080dfcd02ab199e6d16a735fc30"
