@@ -49,13 +49,13 @@ export class PersistentTunnelSocket {
     private TunnelHost: url.UrlWithStringQuery;
     private ServerHost: url.UrlWithStringQuery;
 
-    private BrotliPipe = zlib.createBrotliDecompress();
-    private UnzipPipe = zlib.createUnzip();
+    private BrotliPipe!: zlib.BrotliDecompress;
+    private UnzipPipe!: zlib.Unzip;
 
     private InPipe!: stream.PassThrough;
     private OutPipe!: stream.PassThrough;
 
-    private RequestKiller?: (Reason?: Error | string) => void;
+    private RequestKiller?: (Reason?: Error) => void;
 
     public constructor(TunnelHost: string, ServerHost: string) {
         this.TunnelHost = url.parse(TunnelHost, false, true);
@@ -65,18 +65,34 @@ export class PersistentTunnelSocket {
     }
 
     public Request = <T = string>(Url: string, Options?: IRequestOptions): Promise<IResponse<T>> => {
+        let TimeoutRejector: () => void;
+        let TimeoutID: NodeJS.Timeout;
+
         return Promise.race([
             new Promise<never>((_Resolve, Reject) => {
-                setTimeout(Reject, Options?.Timeout ?? 30000);
+                TimeoutRejector = Reject;
+                TimeoutID = setTimeout(Reject, Options?.Timeout ?? 30000, new Error('Timed Out'));
             }),
             /* eslint-disable-next-line no-async-promise-executor */
             new Promise<IResponse<T>>(async (Resolve, Reject) => {
+                const ReturnResult = (Result: IResponse<T>): void => {
+                    TimeoutRejector();
+                    clearTimeout(TimeoutID);
+                    Resolve(Result);
+                };
+
+                const RejectError = (Err?: Error): void => {
+                    TimeoutRejector();
+                    clearTimeout(TimeoutID);
+                    Reject(Err);
+                };
+
                 if (!this.Socket || !this.Socket.writable) {
                     if (!this.Connecting) this.Connect();
                     await this.ConnectionPromise;
                 }
 
-                this.RequestKiller = Reject;
+                this.RequestKiller = RejectError;
                 //this.RequestFinaliser = Resolve;
 
                 /**
@@ -90,17 +106,20 @@ export class PersistentTunnelSocket {
 
                     this.InPipe = new stream.PassThrough();
                     this.OutPipe = new stream.PassThrough();
+                    this.BrotliPipe = zlib.createBrotliDecompress();
+                    this.UnzipPipe = zlib.createUnzip();
+
                     this.OutPipe.on('data', (Chunk: Buffer) => (this.Body += Chunk.toString('utf8')));
                     this.OutPipe.on('end', () => {
                         if ((this.Headers['content-type'] as string | undefined)?.includes('application/json') || Options?.ParseJSON === true) {
                             try {
                                 this.Body = JSON.parse(this.Body);
                             } catch (Err) {
-                                Reject(Err);
+                                RejectError(Err);
                             }
                         }
 
-                        Resolve({
+                        ReturnResult({
                             Body: (this.Body as unknown) as T,
                             Headers: this.Headers,
                             StatusCode: this.StatusCode,
@@ -177,10 +196,21 @@ export class PersistentTunnelSocket {
         this.Parser.close();
 
         /* Destroy Pipes */
+        this.InPipe.removeAllListeners();
         this.InPipe.destroy();
+        this.InPipe = (undefined as unknown) as stream.PassThrough;
+
+        this.OutPipe.removeAllListeners();
         this.OutPipe.destroy();
+        this.OutPipe = (undefined as unknown) as stream.PassThrough;
+
+        this.UnzipPipe.removeAllListeners();
         this.UnzipPipe.destroy();
+        this.UnzipPipe = (undefined as unknown) as zlib.Unzip;
+
+        this.BrotliPipe.removeAllListeners();
         this.BrotliPipe.destroy();
+        this.BrotliPipe = (undefined as unknown) as zlib.BrotliDecompress;
     };
 
     private Connect = (): void => {

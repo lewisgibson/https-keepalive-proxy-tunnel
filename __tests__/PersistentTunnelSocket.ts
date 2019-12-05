@@ -30,5 +30,5 @@ describe('PersistentTunnelSocket', () => {
         }
 
         expect(Err).toBeUndefined();
-    });
+    }, 5000);
 });
