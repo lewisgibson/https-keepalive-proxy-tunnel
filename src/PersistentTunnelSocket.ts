@@ -49,7 +49,11 @@ export class PersistentTunnelSocket {
     private TunnelHost: url.UrlWithStringQuery;
     private ServerHost: url.UrlWithStringQuery;
 
-    private DecompressionPipe!: stream.PassThrough | zlib.BrotliDecompress | zlib.Unzip;
+    private BrotliPipe = zlib.createBrotliDecompress();
+    private UnzipPipe = zlib.createUnzip();
+
+    private InPipe!: stream.PassThrough;
+    private OutPipe!: stream.PassThrough;
 
     private RequestKiller?: (Reason?: Error | string) => void;
 
@@ -82,25 +86,13 @@ export class PersistentTunnelSocket {
                 this.Parser[HTTPParser.kOnHeadersComplete] = ({ statusCode, headers }): void => {
                     this.Headers = this.ParseHeaders(headers, Options?.EvaluateHeaders);
                     this.StatusCode = statusCode;
+                    this.Body = '';
 
-                    switch (this.Headers?.['content-encoding']) {
-                        case 'br':
-                            this.DecompressionPipe = zlib.createBrotliDecompress();
-                            break;
-
-                        case 'gzip':
-                        case 'deflate':
-                            this.DecompressionPipe = zlib.createUnzip();
-                            break;
-
-                        default:
-                            this.DecompressionPipe = new stream.PassThrough();
-                            break;
-                    }
-
-                    this.DecompressionPipe.on('data', (Chunk: Buffer) => (this.Body += Chunk.toString('utf8')));
-                    this.DecompressionPipe.on('end', () => {
-                        if (this.Headers['content-type'] === 'application/json' || Options?.ParseJSON === true) {
+                    this.InPipe = new stream.PassThrough();
+                    this.OutPipe = new stream.PassThrough();
+                    this.OutPipe.on('data', (Chunk: Buffer) => (this.Body += Chunk.toString('utf8')));
+                    this.OutPipe.on('end', () => {
+                        if ((this.Headers['content-type'] as string | undefined)?.includes('application/json') || Options?.ParseJSON === true) {
                             try {
                                 this.Body = JSON.parse(this.Body);
                             } catch (Err) {
@@ -114,14 +106,29 @@ export class PersistentTunnelSocket {
                             StatusCode: this.StatusCode,
                         });
                     });
+
+                    switch (this.Headers?.['content-encoding']) {
+                        case 'br':
+                            this.InPipe.pipe(this.BrotliPipe).pipe(this.OutPipe);
+                            break;
+
+                        case 'gzip':
+                        case 'deflate':
+                            this.InPipe.pipe(this.UnzipPipe).pipe(this.OutPipe);
+                            break;
+
+                        default:
+                            this.InPipe.pipe(this.OutPipe);
+                            break;
+                    }
                 };
 
                 this.Parser[HTTPParser.kOnBody] = (Chunk, Offset, Length): void => {
-                    this.DecompressionPipe.write(Chunk.slice(Offset, Offset + Length));
+                    this.InPipe.push(Chunk.slice(Offset, Offset + Length));
                 };
 
                 this.Parser[HTTPParser.kOnMessageComplete] = (): void => {
-                    this.DecompressionPipe.push(null);
+                    this.InPipe.push(null);
                 };
 
                 /**
@@ -136,7 +143,7 @@ export class PersistentTunnelSocket {
                 this.Socket.write(`${Options?.Method ?? 'GET'} ${FullPath} HTTP/1.1\r\n`);
                 this.Socket.write(`Host: ${this.ServerHost.hostname}\r\n`);
                 this.Socket.write(`Accept: */*\r\n`);
-                //this.Socket.write(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
+                this.Socket.write(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
 
                 /* Custom Request Headers */
                 if (typeof Options?.Headers === 'object') {
@@ -162,9 +169,18 @@ export class PersistentTunnelSocket {
     };
 
     public Destroy = (Err?: Error): void => {
+        /* Disconnect Socket */
         this.Destroyed = true;
-        this.Socket.destroy(Err);
+        this.Disconnect(Err);
+
+        /* Destroy HTTP Parser */
         this.Parser.close();
+
+        /* Destroy Pipes */
+        this.InPipe.destroy();
+        this.OutPipe.destroy();
+        this.UnzipPipe.destroy();
+        this.BrotliPipe.destroy();
     };
 
     private Connect = (): void => {

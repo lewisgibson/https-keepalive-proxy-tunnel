@@ -1,28 +1,34 @@
-import { IResponse, PersistentTunnelSocket } from '../src/PersistentTunnelSocket';
+import { PersistentTunnelSocket } from '../src/PersistentTunnelSocket';
 
 describe('PersistentTunnelSocket', () => {
-    test('Should Work in Series', async () => {
-        const Tunnel = new PersistentTunnelSocket('http://roblox:roblox@207.148.12.234:80', 'https://catalog.roblox.com');
-        const Responses: (IResponse | null)[] = [];
+    let Tunnel: PersistentTunnelSocket | undefined;
 
-        for (let i = 0; i < 1; i++)
-            try {
-                Responses.push(
-                    await Tunnel.Request('https://catalog.roblox.com/v1/search/items', {
-                        Query: {
-                            category: 'Collectibles',
-                            limit: 100,
-                        },
-                    }),
-                );
-            } catch (Err) {
-                Responses.push(null);
-            }
+    beforeAll(() => {
+        Tunnel = new PersistentTunnelSocket(process.env.Proxy!, 'https://postman-echo.com/');
+    });
 
-        Tunnel.Destroy();
+    afterAll(() => {
+        Tunnel!.Destroy();
+        Tunnel = undefined;
+    });
 
-        console.log(Responses[0]);
+    test('Should Fetch Request', async () => {
+        let Err: Error | undefined;
 
-        expect(Responses.includes(null)).toBeFalsy();
+        try {
+            await Tunnel!.Request('https://postman-echo.com/get', {
+                Headers: {
+                    test: 123,
+                },
+                Query: {
+                    foo1: 'bar1',
+                    foo2: 'bar2',
+                },
+            });
+        } catch (e) {
+            Err = e;
+        }
+
+        expect(Err).toBeUndefined();
     });
 });

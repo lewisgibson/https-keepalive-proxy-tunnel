@@ -1,6 +1,6 @@
 {
     "name": "@robinlemon/https-keepalive-proxy-tunnel",
-    "version": "1.0.1",
+    "version": "1.1.1",
     "description": "A library to keep-alive and write requests directly onto a Net/TLS socket for HTTP and HTTPS requests.",
     "author": "Lewis Gibson <lewis-gibson@hotmail.com>",
     "license": "MIT",
@@ -37,11 +37,12 @@
     "scripts": {
         "start": "yarn build && node -r source-map-support/register ./build/src/",
         "build": "rimraf build && tsc -p .",
-        "test": "jest --verbose",
-        "test:live": "jest --verbose --watchAll",
-        "coverage": "codechecks && jest --coverage --maxWorkers=2 && codecov",
+        "test": "jest --verbose --detectOpenHandles",
+        "test:live": "jest --verbose --watchAll --detectOpenHandles",
+        "coverage": "codechecks && jest --coverage --maxWorkers=2 --detectOpenHandles && codecov",
         "lint": "eslint . --ext .js,.ts,.json,.md",
-        "lint:fix": "eslint . --ext .js,.ts,.json,.md --fix"
+        "lint:fix": "eslint . --ext .js,.ts,.json,.md --fix",
+        "prepublishOnly": "yarn lint && yarn test && yarn build"
     },
     "typeCoverage": {
         "atLeast": 90
@@ -50,9 +51,10 @@
         "access": "public"
     },
     "dependencies": {
-        "http-parser-js": "^0.5.2"
+        "dotenv": "^8.2.0"
     },
     "devDependencies": {
+        "http-parser-js": "^0.5.2",
         "@codechecks/client": "^0.1.10",
         "@types/jest": "^24.0.18",
         "@types/node": "^12.7.11",
