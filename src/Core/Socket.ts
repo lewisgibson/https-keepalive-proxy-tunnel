@@ -246,7 +246,6 @@ export class Socket implements IRequestable {
                 /* End Request */
                 RequestLines.push('\r\n');
                 this.Socket?.write(RequestLines.join(''));
-                console.debug(JSON.stringify(RequestLines.join('')));
                 this.Socket!.uncork();
             }),
         ]);
