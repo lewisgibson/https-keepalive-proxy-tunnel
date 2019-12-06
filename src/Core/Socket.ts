@@ -207,13 +207,14 @@ export class Socket implements IRequestable {
                 const { pathname, query: UrlQuery } = url.parse(Url, true, true);
                 const QueryStr = querystring.stringify({ ...UrlQuery, ...Options?.Query });
                 const FullPath = `${pathname ?? '/'}${QueryStr?.length ? '?' + QueryStr : ''}`;
+                const RequestLines: string[] = [];
 
                 /* Primary Request Headers */
                 this.Socket!.cork();
-                this.Socket!.write(`${Options?.Method ?? 'GET'} ${FullPath} HTTP/1.1\r\n`);
-                this.Socket!.write(`Host: ${this.ServerHost.hostname}\r\n`);
-                this.Socket!.write(`Accept: */*\r\n`);
-                this.Socket!.write(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
+                RequestLines.push(`${Options?.Method ?? 'GET'} ${FullPath} HTTP/1.1\r\n`);
+                RequestLines.push(`Host: ${this.ServerHost.hostname}\r\n`);
+                RequestLines.push(`Accept: */*\r\n`);
+                RequestLines.push(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
 
                 /* Custom Request Headers */
                 if (typeof Options?.Headers === 'object') {
@@ -222,28 +223,30 @@ export class Socket implements IRequestable {
                         {} as Record<string, string | number>,
                     );
 
-                    for (const [Key, Value] of Object.entries(Options?.Headers)) this.Socket!.write(`${Key}: ${Value!.toString()}\r\n`);
+                    for (const [Key, Value] of Object.entries(Options?.Headers)) RequestLines.push(`${Key}: ${Value!.toString()}\r\n`);
                 }
 
                 /* Request Body */
                 let RequestBody = '';
 
                 if (typeof Options?.Form === 'object') {
-                    if (!Options?.Headers?.hasOwnProperty('content-type')) this.Socket!.write(`Content-Type: application/x-www-form-urlencoded\r\n`);
+                    if (!Options?.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/x-www-form-urlencoded\r\n`);
 
                     RequestBody = querystring.stringify(Options.Form as querystring.ParsedUrlQueryInput);
                 } else if (typeof Options?.Body === 'object') {
-                    if (!Options?.Headers?.hasOwnProperty('content-type')) this.Socket!.write(`Content-Type: application/json\r\n`);
+                    if (!Options?.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/json\r\n`);
 
                     RequestBody = JSON.stringify(Options?.Body) ?? '';
                 }
 
-                if (Options?.Headers?.hasOwnProperty('content-length')) this.Socket!.write('\r\n');
-                else this.Socket!.write(`Content-Length: ${Buffer.byteLength(RequestBody)}\r\n\r\n`);
-                this.Socket!.write(RequestBody);
+                if (Options?.Headers?.hasOwnProperty('content-length')) RequestLines.push('\r\n');
+                else RequestLines.push(`Content-Length: ${Buffer.byteLength(RequestBody)}\r\n\r\n`);
+                RequestLines.push(RequestBody);
 
                 /* End Request */
-                this.Socket!.write('\r\n');
+                RequestLines.push('\r\n');
+                this.Socket?.write(RequestLines.join(''));
+                console.debug(JSON.stringify(RequestLines.join('')));
                 this.Socket!.uncork();
             }),
         ]);
@@ -308,7 +311,7 @@ export class Socket implements IRequestable {
 
         for (let Line = 0; Line < Headers.length; Line += 2) {
             const HeaderName = Headers[Line].toLowerCase();
-            let Value = Headers[Line + 1].toLowerCase();
+            let Value = Headers[Line + 1];
 
             if (EvaluateHeaders) {
                 try {
