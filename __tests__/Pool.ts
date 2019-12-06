@@ -1,10 +1,10 @@
-import { IResponse, SocketCluster } from '../src';
+import { IResponse, Pool } from '../src';
 
-describe('SocketCluster', () => {
-    let Cluster: SocketCluster | undefined;
+describe('Pool', () => {
+    let Cluster: Pool | undefined;
 
     beforeAll(() => {
-        Cluster = new SocketCluster({
+        Cluster = new Pool({
             ServerHost: 'https://postman-echo.com/',
             Sockets: 10,
             TunnelHost: process.env.Proxy!,
@@ -16,10 +16,10 @@ describe('SocketCluster', () => {
         Cluster = undefined;
     });
 
-    test('Should Fetch Request', async () => {
+    test('100 Unique Requests', async () => {
         interface IAPIResponse {
             args: {
-                i: number;
+                i: string;
             };
             headers: Record<string, string>;
             url: string;
@@ -33,7 +33,7 @@ describe('SocketCluster', () => {
                 Array.from({ length: 100 }, (_, i) =>
                     Cluster!.Request<IAPIResponse>('https://postman-echo.com/get', {
                         Headers: {
-                            test: 123,
+                            test: '123',
                         },
                         Query: {
                             i,
@@ -47,6 +47,6 @@ describe('SocketCluster', () => {
 
         expect(Err).toBeUndefined();
 
-        for (let i = 0; i < Responses.length; i++) expect(Responses[i].Body.args.i).toBe(i);
+        for (let i = 0; i < Responses.length; i++) expect(Responses[i].Body.args.i).toBe(i.toString());
     }, 5000);
 });

@@ -1,3 +1,4 @@
+/* Dependencies */
 import { AsyncQueue } from '@robinlemon/priority-concurrency-queue';
 import * as http from 'http';
 import { HTTPParser } from 'http-parser-js';
@@ -8,43 +9,19 @@ import * as tls from 'tls';
 import * as url from 'url';
 import * as zlib from 'zlib';
 
-/**
- *
- */
-export type IRequestOptions = {
-    Method?: string;
-    Headers?: Record<string, string | number>;
-    Query?: object;
-    Form?: object;
-    Body?: string | object;
-    Timeout?: number;
-    ParseJSON?: boolean;
-    EvaluateHeaders?: boolean;
-};
+/* Types */
+import { IRequestable } from '../Types/IRequestable';
+import { IRequestOptions } from '../Types/IRequestOptions';
+import { IResponse } from '../Types/IResponse';
 
-/**
- *  @description A response object.
- */
-export interface IResponse<T = string> {
-    Body: T;
-    Headers: Record<string, string | number>;
-    StatusCode: number;
-}
-
-/**
- *
- */
-export interface PersistentTunnelCtorOpts {
+export interface SocketCtorOpts {
     TunnelHost: string;
     ServerHost: string;
     Pipelining?: number;
 }
 
-/**
- * @description
- */
-export class PersistentTunnelSocket {
-    private Socket!: tls.TLSSocket;
+export class Socket implements IRequestable {
+    private Socket: tls.TLSSocket | undefined;
     private Parser = new HTTPParser(HTTPParser.RESPONSE);
 
     private Destroyed = false;
@@ -69,7 +46,7 @@ export class PersistentTunnelSocket {
 
     private RequestQueue: AsyncQueue;
 
-    public constructor({ ServerHost, TunnelHost, Pipelining }: PersistentTunnelCtorOpts) {
+    public constructor({ ServerHost, TunnelHost, Pipelining }: SocketCtorOpts) {
         this.TunnelHost = url.parse(TunnelHost, false, true);
         this.ServerHost = url.parse(ServerHost, false, true);
 
@@ -81,10 +58,17 @@ export class PersistentTunnelSocket {
         this.Connect();
     }
 
+    /**
+     * @returns The length of requests in the queue waiting to be processed.
+     */
     public get QueueSize(): number {
         return this.RequestQueue.Tasks;
     }
 
+    /**
+     * @description Destroys the internal pipes, HTTP parser and (net|tls).Socket instance then stops the request queue.
+     *              All property references are voided.
+     */
     public Destroy = (Err?: Error): void => {
         /* Disconnect Socket */
         this.Destroyed = true;
@@ -117,6 +101,14 @@ export class PersistentTunnelSocket {
         }
     };
 
+    /**
+     * @description Performs a HTTP/1.1 Request on a Socket in the pool
+     *
+     * @param Url The endpoint the request path will be extracted from
+     * @param Options Additional options to pass to the request such as headers or form data.
+     *
+     * @returns A promise which resolves to an object containing the response body, headers and status code.
+     */
     public Request = <T = string>(Url: string, Options?: IRequestOptions): Promise<IResponse<T>> =>
         new Promise<IResponse<T>>((Resolve, Reject) => {
             this.RequestQueue.Add({
@@ -140,15 +132,15 @@ export class PersistentTunnelSocket {
             /* eslint-disable-next-line no-async-promise-executor */
             new Promise<IResponse<T>>(async (Resolve, Reject) => {
                 const ReturnResult = (Result: IResponse<T>): void => {
-                    TimeoutRejector();
-                    clearTimeout(TimeoutID);
                     Resolve(Result);
+                    clearTimeout(TimeoutID);
+                    TimeoutRejector();
                 };
 
                 const RejectError = (Err?: Error): void => {
+                    Reject(Err);
                     TimeoutRejector();
                     clearTimeout(TimeoutID);
-                    Reject(Err);
                 };
 
                 if (!this.Socket || !this.Socket.writable) {
@@ -157,11 +149,8 @@ export class PersistentTunnelSocket {
                 }
 
                 this.RequestKiller = RejectError;
-                //this.RequestFinaliser = Resolve;
 
-                /**
-                 * Setup Response
-                 */
+                /* Setup Response */
                 this.Parser[HTTPParser.kOnHeaders] = (): void => undefined;
                 this.Parser[HTTPParser.kOnHeadersComplete] = ({ statusCode, headers }): void => {
                     this.Headers = this.ParseHeaders(headers, Options?.EvaluateHeaders);
@@ -214,39 +203,48 @@ export class PersistentTunnelSocket {
                     this.InPipe.push(null);
                 };
 
-                /**
-                 * Write Request
-                 */
+                /* Write Request */
                 const { pathname, query: UrlQuery } = url.parse(Url, true, true);
                 const QueryStr = querystring.stringify({ ...UrlQuery, ...Options?.Query });
                 const FullPath = `${pathname ?? '/'}${QueryStr?.length ? '?' + QueryStr : ''}`;
 
                 /* Primary Request Headers */
-                this.Socket.cork();
-                this.Socket.write(`${Options?.Method ?? 'GET'} ${FullPath} HTTP/1.1\r\n`);
-                this.Socket.write(`Host: ${this.ServerHost.hostname}\r\n`);
-                this.Socket.write(`Accept: */*\r\n`);
-                this.Socket.write(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
+                this.Socket!.cork();
+                this.Socket!.write(`${Options?.Method ?? 'GET'} ${FullPath} HTTP/1.1\r\n`);
+                this.Socket!.write(`Host: ${this.ServerHost.hostname}\r\n`);
+                this.Socket!.write(`Accept: */*\r\n`);
+                this.Socket!.write(`Accept-Encoding: br;q=1.0, gzip;q=0.8, deflate;q=0.6, *;q=0.1\r\n`);
 
                 /* Custom Request Headers */
                 if (typeof Options?.Headers === 'object') {
                     Options.Headers = Object.entries(Options.Headers).reduce<Record<string, string | number>>(
-                        (Builder, [Key, Val]) => ({ ...Builder, [Key.toLowerCase()]: Val.toString() }),
+                        (Builder, [Key, Val]) => ({ ...Builder, [Key.toLowerCase()]: Val!.toString() }),
                         {} as Record<string, string | number>,
                     );
 
-                    for (const [Key, Value] of Object.entries(Options?.Headers)) this.Socket.write(`${Key}: ${Value.toString()}\r\n`);
+                    for (const [Key, Value] of Object.entries(Options?.Headers)) this.Socket!.write(`${Key}: ${Value!.toString()}\r\n`);
                 }
 
                 /* Request Body */
-                const RequestBody = JSON.stringify(Options?.Body) ?? '';
-                if (Options?.Headers?.hasOwnProperty('content-length')) this.Socket.write('\r\n');
-                else this.Socket.write(`content-length: ${Buffer.byteLength(RequestBody)}\r\n\r\n`);
-                this.Socket.write(RequestBody);
+                let RequestBody = '';
+
+                if (typeof Options?.Form === 'object') {
+                    if (!Options?.Headers?.hasOwnProperty('content-type')) this.Socket!.write(`Content-Type: application/x-www-form-urlencoded\r\n`);
+
+                    RequestBody = querystring.stringify(Options.Form as querystring.ParsedUrlQueryInput);
+                } else if (typeof Options?.Body === 'object') {
+                    if (!Options?.Headers?.hasOwnProperty('content-type')) this.Socket!.write(`Content-Type: application/json\r\n`);
+
+                    RequestBody = JSON.stringify(Options?.Body) ?? '';
+                }
+
+                if (Options?.Headers?.hasOwnProperty('content-length')) this.Socket!.write('\r\n');
+                else this.Socket!.write(`Content-Length: ${Buffer.byteLength(RequestBody)}\r\n\r\n`);
+                this.Socket!.write(RequestBody);
 
                 /* End Request */
-                this.Socket.write('\r\n');
-                this.Socket.uncork();
+                this.Socket!.write('\r\n');
+                this.Socket!.uncork();
             }),
         ]);
     };
@@ -294,8 +292,8 @@ export class PersistentTunnelSocket {
     private Disconnect = (Err?: Error): void => {
         this.RequestKiller?.(Err);
 
-        this.Socket.destroy(Err);
-        this.Socket.removeAllListeners();
+        this.Socket?.destroy(Err);
+        this.Socket?.removeAllListeners();
     };
 
     private Reconnect = (Err?: Error): void => {
