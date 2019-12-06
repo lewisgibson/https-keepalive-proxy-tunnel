@@ -32,6 +32,15 @@ export interface IResponse<T = string> {
 }
 
 /**
+ *
+ */
+export interface PersistentTunnelCtorOpts {
+    TunnelHost: string;
+    ServerHost: string;
+    Pipelining?: number;
+}
+
+/**
  * @description
  */
 export class PersistentTunnelSocket {
@@ -60,16 +69,20 @@ export class PersistentTunnelSocket {
 
     private RequestQueue: AsyncQueue;
 
-    public constructor(TunnelHost: string, ServerHost: string, Pipelining = 1) {
+    public constructor({ ServerHost, TunnelHost, Pipelining }: PersistentTunnelCtorOpts) {
         this.TunnelHost = url.parse(TunnelHost, false, true);
         this.ServerHost = url.parse(ServerHost, false, true);
 
         this.RequestQueue = new AsyncQueue({
             AutoStart: true,
-            Concurrency: Pipelining,
+            Concurrency: Pipelining ?? 1,
         });
 
         this.Connect();
+    }
+
+    public get QueueSize(): number {
+        return this.RequestQueue.Tasks;
     }
 
     public Destroy = (Err?: Error): void => {

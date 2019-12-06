@@ -4,7 +4,10 @@ describe('PersistentTunnelSocket', () => {
     let Tunnel: PersistentTunnelSocket | undefined;
 
     beforeAll(() => {
-        Tunnel = new PersistentTunnelSocket(process.env.Proxy!, 'https://postman-echo.com/');
+        Tunnel = new PersistentTunnelSocket({
+            ServerHost: 'https://postman-echo.com/',
+            TunnelHost: process.env.Proxy!,
+        });
     });
 
     afterAll(() => {
