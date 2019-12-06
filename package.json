@@ -1,6 +1,6 @@
 {
     "name": "@robinlemon/https-keepalive-proxy-tunnel",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "description": "A library to keep-alive and write requests directly onto a Net/TLS socket for HTTP and HTTPS requests.",
     "author": "Lewis Gibson <lewis-gibson@hotmail.com>",
     "license": "MIT",
