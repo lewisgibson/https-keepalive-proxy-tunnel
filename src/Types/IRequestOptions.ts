@@ -45,7 +45,7 @@ export type IRequestOptions = {
     };
     Query?: object;
     Form?: object;
-    Body?: string | object;
+    Body?: string | object | Buffer;
     Timeout?: number;
     ParseJSON?: boolean;
     EvaluateHeaders?: boolean;

@@ -230,13 +230,21 @@ export class Socket implements IRequestable {
                 let RequestBody = '';
 
                 if (typeof Options?.Form === 'object') {
-                    if (!Options?.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/x-www-form-urlencoded\r\n`);
+                    if (!Options.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/x-www-form-urlencoded\r\n`);
 
                     RequestBody = querystring.stringify(Options.Form as querystring.ParsedUrlQueryInput);
-                } else if (typeof Options?.Body === 'object') {
-                    if (!Options?.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/json\r\n`);
+                } else if (typeof Options?.Body === 'string') {
+                    if (!Options.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: text/html\r\n`);
 
-                    RequestBody = JSON.stringify(Options?.Body) ?? '';
+                    RequestBody = Options.Body;
+                } else if (typeof Options?.Body !== 'undefined' && Buffer.isBuffer(Options?.Body)) {
+                    if (!Options.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: text/html\r\n`);
+
+                    RequestBody = Options.Body.toString('utf8');
+                } else if (typeof Options?.Body === 'object') {
+                    if (!Options.Headers?.hasOwnProperty('content-type')) RequestLines.push(`Content-Type: application/json\r\n`);
+
+                    RequestBody = JSON.stringify(Options.Body) ?? '';
                 }
 
                 if (Options?.Headers?.hasOwnProperty('content-length')) RequestLines.push('\r\n');
